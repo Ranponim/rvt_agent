@@ -1,0 +1,12 @@
+# Topology Data (YAML is good for structure)
+cells:
+  - cell_id: "CELL_01"
+    name: "Gangnam_Station_EUWAM"
+    site_id: "SITE_A"
+    pci: 123
+    neighbors:
+      - "CELL_02"
+      - "CELL_03"
+    parameters:
+      bandwidth: 20MHz
+      frequency: 3.5GHz

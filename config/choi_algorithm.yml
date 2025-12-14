@@ -1,0 +1,51 @@
+filtering:
+  min_threshold: 0.87
+  max_threshold: 1.13
+  filter_ratio: 0.50
+
+abnormal_detection:
+  alpha_0: 2
+  beta_3: 500.0
+  enable_range_check: true
+
+stats_analyzing:
+  beta_0: 1000.0
+  beta_1: 5.0
+  beta_2: 10.0
+  beta_3: 500.0
+  beta_4: 10.0
+  beta_5: 3.0
+  rule_priorities:
+    cant_judge: 100
+    high_variation: 90
+    improve: 80
+    degrade: 80
+    high_delta: 70
+    medium_delta: 60
+    low_delta: 50
+    similar: 40
+
+kpi_definitions:
+  lte_topics:
+    Air_MAC_DL_Thru:
+      main: AirMacDLThruAvg
+      subs:
+        - ConnNoAvg
+        - AirMacDLThruMin
+        - AirMacDLThruMax
+    RRC_Setup_Success_Rate:
+      main: RRCSetupSuccessRate
+      subs:
+        - RRCSetupAttempts
+        - RRCSetupFailures
+  nr_topics:
+    NR_MAC_DL_Thru:
+      main: NRMacDLThruAvg
+      subs:
+        - NRConnNoAvg
+        - NRMacDLThruMin
+        - NRMacDLThruMax
+
+general:
+  logging:
+    level: INFO
