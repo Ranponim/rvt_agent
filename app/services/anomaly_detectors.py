@@ -36,7 +36,7 @@ class AnomalyDetectionResult:
     """
     이상 탐지 결과 (불변 객체)
     
-    각 탐지기의 결과를 표현하는 불변 데이터 클래스
+    각 탐지기의 결과를 표현하는 불변 데이터 클래스입니다.
     """
     anomaly_type: str
     affected_cells: Set[str]
@@ -46,7 +46,7 @@ class AnomalyDetectionResult:
     metadata: Dict[str, Any] = field(default_factory=dict)
     
     def __post_init__(self):
-        """후처리 검증"""
+        """후처리 검증: 신뢰도는 0.0 ~ 1.0 사이여야 함"""
         if not 0.0 <= self.confidence <= 1.0:
             raise ValueError(f"Confidence must be between 0.0 and 1.0, got {self.confidence}")
 
@@ -57,9 +57,10 @@ class AnomalyDetectionResult:
 
 class AnomalyDetector(Protocol):
     """
-    이상 탐지기 프로토콜
+    이상 탐지기 프로토콜 (인터페이스)
     
-    Protocol을 사용하여 덕 타이핑 지원 및 더 유연한 인터페이스 제공
+    Protocol을 사용하여 덕 타이핑 지원 및 더 유연한 인터페이스를 제공합니다.
+    모든 이상 탐지기는 이 인터페이스를 따라야 합니다.
     """
     
     def detect(self, 
@@ -69,7 +70,7 @@ class AnomalyDetector(Protocol):
         이상 탐지 실행
         
         Args:
-            peg_data: PEG 데이터
+            peg_data: PEG 데이터 (Cell ID -> PEG 시리즈 리스트)
             config: 탐지 설정
             
         Returns:
@@ -82,7 +83,7 @@ class AnomalyDetector(Protocol):
         ...
     
     def get_detector_info(self) -> Dict[str, Any]:
-        """탐지기 정보 반환"""
+        """탐지기 메타 정보 반환"""
         ...
 
 
@@ -94,7 +95,8 @@ class BaseAnomalyDetector(ABC):
     """
     이상 탐지기 기본 추상 클래스
     
-    공통 기능과 템플릿 메서드 패턴을 제공합니다.
+    공통 기능과 템플릿 메서드 패턴을 제공하여 코드 중복을 줄이고 일관성을 유지합니다.
+    모든 구체적인 이상 탐지기는 이 클래스를 상속받아야 합니다.
     """
     
     def __init__(self, detector_name: str, version: str = "1.0.0"):
@@ -102,21 +104,26 @@ class BaseAnomalyDetector(ABC):
         기본 탐지기 초기화
         
         Args:
-            detector_name: 탐지기 이름
-            version: 버전
+            detector_name: 탐지기 이름 (Log 식별용)
+            version: 탐지기 버전
         """
         self.detector_name = detector_name
         self.version = version
         self.logger = logging.getLogger(f"{__name__}.{self.__class__.__name__}")
         
-        self.logger.info(f"Anomaly detector '{detector_name}' v{version} initialized")
+        self.logger.info(f"🛠️ 이상 탐지기 '{detector_name}' v{version} 초기화됨")
     
     @log_detector_execution()
     def detect(self, 
                peg_data: Dict[str, List[PegSampleSeries]], 
                config: Dict[str, Any]) -> AnomalyDetectionResult:
         """
-        템플릿 메서드: 이상 탐지 실행
+        [Template Method] 이상 탐지 실행 흐름 제어
+        
+        1. 설정 검증
+        2. 입력 데이터 검증
+        3. 실제 탐지 로직 실행 (추상 메서드 호출)
+        4. 결과 검증
         
         Args:
             peg_data: PEG 데이터
@@ -128,28 +135,32 @@ class BaseAnomalyDetector(ABC):
         try:
             # 1. 설정 검증
             if not self.validate_config(config):
+                self.logger.error(f"❌ {self.detector_name}: 설정 검증 실패")
                 raise ValueError(f"Invalid config for {self.detector_name}")
             
             # 2. 입력 데이터 검증
             if not self._validate_input_data(peg_data):
+                self.logger.error(f"❌ {self.detector_name}: 입력 데이터 검증 실패")
                 raise ValueError(f"Invalid input data for {self.detector_name}")
             
             # 3. 실제 탐지 로직 실행 (하위 클래스에서 구현)
-            self.logger.debug(f"Starting {self.detector_name} detection")
+            self.logger.debug(f"🚀 {self.detector_name} 탐지 시작...")
             detection_result = self._execute_detection(peg_data, config)
             
             # 4. 결과 검증
             if not self._validate_result(detection_result):
+                self.logger.error(f"❌ {self.detector_name}: 잘못된 탐지 결과 반환됨")
                 raise RuntimeError(f"Invalid detection result from {self.detector_name}")
             
-            self.logger.info(f"{self.detector_name} detection completed: "
-                           f"{len(detection_result.affected_cells)} cells, "
-                           f"{len(detection_result.affected_pegs)} PEGs affected")
+            self.logger.info(f"✅ {self.detector_name} 탐지 완료: "
+                           f"대상 Cell={len(peg_data)}, "
+                           f"영향받은 Cell={len(detection_result.affected_cells)}, "
+                           f"영향받은 PEG={len(detection_result.affected_pegs)}")
             
             return detection_result
             
         except Exception as e:
-            self.logger.error(f"Error in {self.detector_name} detection: {e}")
+            self.logger.error(f"❌ {self.detector_name} 탐지 중 치명적 오류: {e}", exc_info=True)
             raise
     
     @abstractmethod
@@ -157,7 +168,7 @@ class BaseAnomalyDetector(ABC):
                           peg_data: Dict[str, List[PegSampleSeries]], 
                           config: Dict[str, Any]) -> AnomalyDetectionResult:
         """
-        실제 탐지 로직 구현 (하위 클래스에서 구현)
+        [Abstract] 실제 탐지 로직 구현 (하위 클래스에서 반드시 구현)
         
         Args:
             peg_data: PEG 데이터
@@ -180,24 +191,24 @@ class BaseAnomalyDetector(ABC):
         """
         try:
             if not isinstance(config, dict):
-                self.logger.error("Config must be a dictionary")
+                self.logger.error("설정(Config)은 딕셔너리 형태여야 합니다.")
                 return False
             
             # 하위 클래스에서 추가 검증 수행
             return self._validate_specific_config(config)
             
         except Exception as e:
-            self.logger.error(f"Config validation error: {e}")
+            self.logger.error(f"설정 검증 중 오류: {e}")
             return False
     
     @abstractmethod
     def _validate_specific_config(self, config: Dict[str, Any]) -> bool:
-        """하위 클래스별 특화 설정 검증"""
+        """[Abstract] 하위 클래스별 특화 설정 검증"""
         pass
     
     def _validate_input_data(self, peg_data: Dict[str, List[PegSampleSeries]]) -> bool:
         """
-        입력 데이터 검증
+        입력 데이터 유효성 검증
         
         Args:
             peg_data: 검증할 PEG 데이터
@@ -207,32 +218,37 @@ class BaseAnomalyDetector(ABC):
         """
         try:
             if not peg_data:
-                self.logger.error("Empty PEG data provided")
-                return False
+                self.logger.warning("제공된 PEG 데이터가 비어 있습니다.")
+                # 빈 데이터도 처리 가능한 경우가 있으므로 에러는 아님, 하지만 경고 로그
+                return True
             
             for cell_id, peg_series_list in peg_data.items():
                 if not cell_id:
-                    self.logger.error("Empty cell ID found")
+                    self.logger.error("빈 Cell ID가 발견되었습니다.")
                     return False
                 
+                if peg_series_list is None:
+                     self.logger.error(f"Cell {cell_id}의 PEG 시리즈 리스트가 None입니다.")
+                     return False
+                     
                 if not peg_series_list:
-                    self.logger.warning(f"Empty PEG series list for cell: {cell_id}")
+                    self.logger.debug(f"ℹ️ Cell {cell_id}에 대한 PEG 시리즈가 없습니다.")
                     continue
                 
                 for series in peg_series_list:
                     if not isinstance(series, PegSampleSeries):
-                        self.logger.error(f"Invalid series type for {cell_id}")
+                        self.logger.error(f"Cell {cell_id}에 잘못된 타입의 PEG 시리즈가 포함됨: {type(series)}")
                         return False
             
             return True
             
         except Exception as e:
-            self.logger.error(f"Input data validation error: {e}")
+            self.logger.error(f"입력 데이터 검증 중 오류: {e}")
             return False
     
     def _validate_result(self, result: AnomalyDetectionResult) -> bool:
         """
-        결과 검증
+        탐지 결과 유효성 검증
         
         Args:
             result: 검증할 결과
@@ -242,25 +258,25 @@ class BaseAnomalyDetector(ABC):
         """
         try:
             if not isinstance(result, AnomalyDetectionResult):
-                self.logger.error("Result must be AnomalyDetectionResult instance")
+                self.logger.error(f"반환값이 AnomalyDetectionResult 인스턴스가 아닙니다. (실제 타입: {type(result)})")
                 return False
             
             if not result.anomaly_type:
-                self.logger.error("Anomaly type cannot be empty")
+                self.logger.error("Anomaly Type이 비어있습니다.")
                 return False
             
             return True
             
         except Exception as e:
-            self.logger.error(f"Result validation error: {e}")
+            self.logger.error(f"결과 검증 중 오류: {e}")
             return False
     
     def get_detector_info(self) -> Dict[str, Any]:
         """
-        탐지기 정보 반환
+        탐지기 메타 정보 반환
         
         Returns:
-            Dict[str, Any]: 탐지기 메타데이터
+            Dict[str, Any]: 탐지기 이름, 버전, 설명 등
         """
         return {
             "name": self.detector_name,
@@ -279,6 +295,7 @@ class RangeAnomalyDetector(BaseAnomalyDetector):
     Range 이상 탐지기
     
     DIMS 문서의 [min, max] 범위를 벗어나는 통계를 탐지합니다.
+    DIMS 제공자로부터 각 PEG에 대한 범위 정보를 받아와 실제 값과 비교합니다.
     
     Single Responsibility: Range 검사만 담당
     Dependency Inversion: DimsDataProvider 추상화에 의존
@@ -294,13 +311,13 @@ class RangeAnomalyDetector(BaseAnomalyDetector):
         super().__init__("RangeAnomalyDetector")
         self.dims_provider = dims_provider or MockDimsDataProvider()
         
-        self.logger.info(f"Range detector initialized with provider: {type(self.dims_provider).__name__}")
+        self.logger.info(f"📏 Range 탐지기 초기화됨 (Data Provider: {type(self.dims_provider).__name__})")
     
     def _execute_detection(self, 
                           peg_data: Dict[str, List[PegSampleSeries]], 
                           config: Dict[str, Any]) -> AnomalyDetectionResult:
         """
-        Range 이상 탐지 실행
+        [Analysis] Range 이상 탐지 실행
         
         Args:
             peg_data: PEG 데이터
@@ -314,7 +331,7 @@ class RangeAnomalyDetector(BaseAnomalyDetector):
             enable_range_check = config.get("enable_range_check", True)
             
             if not enable_range_check:
-                self.logger.info("Range anomaly detection is disabled by configuration")
+                self.logger.info("ℹ️ 설정에 의해 Range 이상 탐지가 비활성화되었습니다.")
                 return AnomalyDetectionResult(
                     anomaly_type="Range",
                     affected_cells=set(),
@@ -340,7 +357,7 @@ class RangeAnomalyDetector(BaseAnomalyDetector):
                         
                         if not range_info:
                             dims_unavailable_count += 1
-                            self.logger.debug(f"No DIMS range info for {series.peg_name}, skipping gracefully")
+                            self.logger.debug(f"⚠️ {series.peg_name}의 Range 정보 없음, 건너뜀")
                             continue
                         
                         min_value, max_value = range_info["min"], range_info["max"]
@@ -350,7 +367,7 @@ class RangeAnomalyDetector(BaseAnomalyDetector):
                         
                     except Exception as e:
                         dims_unavailable_count += 1
-                        self.logger.warning(f"DIMS data access failed for {series.peg_name}: {e}")
+                        self.logger.warning(f"⚠️ {series.peg_name}의 DIMS 데이터 접근 실패: {e}")
                         # 에러가 발생해도 계속 진행 (견고한 처리)
                         continue
                     
@@ -359,8 +376,8 @@ class RangeAnomalyDetector(BaseAnomalyDetector):
                         affected_pegs.add(series.peg_name)
                         details[f"{cell_id}.{series.peg_name}"] = violations
                         
-                        self.logger.debug(f"Range violation detected: {cell_id}.{series.peg_name} "
-                                        f"(range: [{min_value}, {max_value}])")
+                        self.logger.debug(f"🚨 Range 위반 감지: {cell_id}.{series.peg_name} "
+                                        f"(기준: [{min_value}, {max_value}])")
             
             # DIMS 데이터 가용성에 따른 신뢰도 조정
             total_pegs_checked = sum(len(peg_list) for peg_list in peg_data.values())
@@ -375,8 +392,8 @@ class RangeAnomalyDetector(BaseAnomalyDetector):
             }
             
             if dims_unavailable_count > 0:
-                self.logger.info(f"Range detection completed with {dims_unavailable_count}/{total_pegs_checked} "
-                               f"PEGs having no DIMS data (availability: {dims_availability_ratio:.1%})")
+                self.logger.warning(f"⚠️ Range 탐지 완료 (DIMS 데이터 부족: {dims_unavailable_count}/{total_pegs_checked}, "
+                                  f"가용률: {dims_availability_ratio:.1%})")
             
             return AnomalyDetectionResult(
                 anomaly_type="Range",
@@ -388,23 +405,17 @@ class RangeAnomalyDetector(BaseAnomalyDetector):
             )
             
         except Exception as e:
-            self.logger.error(f"Range detection execution error: {e}")
+            self.logger.error(f"❌ Range 탐지 실행 중 오류: {e}")
             raise
     
     def _check_range_violations(self, 
-                               series: PegSampleSeries, 
-                               min_value: float, 
-                               max_value: float) -> Dict[str, Any]:
+                                series: PegSampleSeries, 
+                                min_value: float, 
+                                max_value: float) -> Dict[str, Any]:
         """
-        개별 시리즈의 범위 위반 검사
+        [Helper] 개별 시리즈의 범위 위반 검사
         
-        Args:
-            series: PEG 시리즈
-            min_value: 최솟값
-            max_value: 최댓값
-            
-        Returns:
-            Dict[str, Any]: 위반 정보 (위반이 없으면 빈 딕셔너리)
+        Pre와 Post 기간의 모든 샘플을 검사하여 범위를 벗어나는 샘플을 찾습니다.
         """
         try:
             violations = {}
@@ -432,12 +443,12 @@ class RangeAnomalyDetector(BaseAnomalyDetector):
             return violations
             
         except Exception as e:
-            self.logger.error(f"Range violation check error: {e}")
+            self.logger.error(f"❌ Range 위반 검사 중 오류: {e}")
             return {}
     
     def _validate_specific_config(self, config: Dict[str, Any]) -> bool:
-        """Range 탐지기 특화 설정 검증"""
-        # Range 탐지기는 추가 설정 불필요
+        """[Validation] Range 탐지기 특화 설정 검증"""
+        # Range 탐지기는 필수로 요구되는 추가 설정이 없음
         return True
 
 
@@ -445,11 +456,13 @@ class RangeAnomalyDetector(BaseAnomalyDetector):
 # ND (No Data) 이상 탐지기
 # =============================================================================
 
-class NDanomalyDetector(BaseAnomalyDetector):
+class NDAnomalyDetector(BaseAnomalyDetector):
     """
     ND (No Data) 이상 탐지기
     
     pre/post 중 한쪽만 ND인 경우를 탐지합니다.
+    - Pre만 ND: Post에 데이터가 생김 (이슈 아닐 수 있음, 상황에 따라 다름)
+    - Post만 ND: Pre에는 있었는데 Post에 데이터가 없음 (심각한 이슈 가능성)
     
     Single Responsibility: ND 검사만 담당
     """
@@ -462,7 +475,7 @@ class NDanomalyDetector(BaseAnomalyDetector):
                           peg_data: Dict[str, List[PegSampleSeries]], 
                           config: Dict[str, Any]) -> AnomalyDetectionResult:
         """
-        ND 이상 탐지 실행
+        [Analysis] ND 이상 탐지 실행
         
         Args:
             peg_data: PEG 데이터
@@ -485,9 +498,12 @@ class NDanomalyDetector(BaseAnomalyDetector):
                         affected_pegs.add(series.peg_name)
                         details[f"{cell_id}.{series.peg_name}"] = nd_info
                         
-                        self.logger.debug(f"ND anomaly detected: {cell_id}.{series.peg_name} "
-                                        f"(pre_nd_ratio={nd_info['pre_nd_ratio']:.2%}, "
-                                        f"post_nd_ratio={nd_info['post_nd_ratio']:.2%})")
+                        pattern_desc = "Pre Only" if nd_info["nd_pattern"] == "pre_only" else "Post Only"
+                        
+                        self.logger.debug(f"🚨 ND 이상 감지: {cell_id}.{series.peg_name} "
+                                        f"({pattern_desc}, "
+                                        f"Pre ND: {nd_info['pre_nd_ratio']:.1%}, "
+                                        f"Post ND: {nd_info['post_nd_ratio']:.1%})")
             
             return AnomalyDetectionResult(
                 anomaly_type="ND",
@@ -499,12 +515,12 @@ class NDanomalyDetector(BaseAnomalyDetector):
             )
             
         except Exception as e:
-            self.logger.error(f"ND detection execution error: {e}")
+            self.logger.error(f"❌ ND 탐지 실행 중 오류: {e}")
             raise
     
     def _analyze_nd_pattern(self, series: PegSampleSeries) -> Dict[str, Any]:
         """
-        시리즈의 ND 패턴 분석
+        [Helper] 시리즈의 ND 패턴 분석
         
         Args:
             series: PEG 시리즈
@@ -539,11 +555,11 @@ class NDanomalyDetector(BaseAnomalyDetector):
             }
             
         except Exception as e:
-            self.logger.error(f"ND pattern analysis error: {e}")
+            self.logger.error(f"❌ ND 패턴 분석 중 오류: {e}")
             return {"has_one_sided_nd": False}
     
     def _validate_specific_config(self, config: Dict[str, Any]) -> bool:
-        """ND 탐지기 특화 설정 검증"""
+        """[Validation] ND 탐지기 특화 설정 검증"""
         # ND 탐지기는 추가 설정 불필요
         return True
 
@@ -556,7 +572,10 @@ class ZeroAnomalyDetector(BaseAnomalyDetector):
     """
     Zero 값 이상 탐지기
     
-    pre/post 중 한쪽만 0인 경우를 탐지합니다.
+    pre/post 중 한쪽만 0(Zero)인 경우를 탐지합니다.
+    - Zero Tolerance를 사용하여 부동소수점 0 비교 문제를 해결합니다.
+    - Pre가 0인데 Post가 0이 아님 -> 트래픽 발생 시작?
+    - Pre가 0이 아닌데 Post가 0임 -> 트래픽 소멸 (장애 가능성)
     
     Single Responsibility: Zero 검사만 담당
     """
@@ -571,13 +590,13 @@ class ZeroAnomalyDetector(BaseAnomalyDetector):
         super().__init__("ZeroAnomalyDetector")
         self.zero_tolerance = zero_tolerance
         
-        self.logger.debug(f"Zero tolerance set to: {zero_tolerance}")
+        self.logger.info(f"0️⃣ Zero 탐지기 초기화됨 (Tolerance: {zero_tolerance})")
     
     def _execute_detection(self, 
                           peg_data: Dict[str, List[PegSampleSeries]], 
                           config: Dict[str, Any]) -> AnomalyDetectionResult:
         """
-        Zero 이상 탐지 실행
+        [Analysis] Zero 이상 탐지 실행
         
         Args:
             peg_data: PEG 데이터
@@ -600,9 +619,12 @@ class ZeroAnomalyDetector(BaseAnomalyDetector):
                         affected_pegs.add(series.peg_name)
                         details[f"{cell_id}.{series.peg_name}"] = zero_info
                         
-                        self.logger.debug(f"Zero anomaly detected: {cell_id}.{series.peg_name} "
-                                        f"(pre_zero_ratio={zero_info['pre_zero_ratio']:.2%}, "
-                                        f"post_zero_ratio={zero_info['post_zero_ratio']:.2%})")
+                        pattern_desc = "Pre Only" if zero_info["zero_pattern"] == "pre_only" else "Post Only"
+                        
+                        self.logger.debug(f"🚨 Zero 이상 감지: {cell_id}.{series.peg_name} "
+                                        f"({pattern_desc}, "
+                                        f"Pre Zero: {zero_info['pre_zero_ratio']:.1%}, "
+                                        f"Post Zero: {zero_info['post_zero_ratio']:.1%})")
             
             return AnomalyDetectionResult(
                 anomaly_type="Zero",
@@ -614,12 +636,12 @@ class ZeroAnomalyDetector(BaseAnomalyDetector):
             )
             
         except Exception as e:
-            self.logger.error(f"Zero detection execution error: {e}")
+            self.logger.error(f"❌ Zero 탐지 실행 중 오류: {e}")
             raise
     
     def _analyze_zero_pattern(self, series: PegSampleSeries) -> Dict[str, Any]:
         """
-        시리즈의 Zero 패턴 분석
+        [Helper] 시리즈의 Zero 패턴 분석
         
         Args:
             series: PEG 시리즈
@@ -657,11 +679,11 @@ class ZeroAnomalyDetector(BaseAnomalyDetector):
             }
             
         except Exception as e:
-            self.logger.error(f"Zero pattern analysis error: {e}")
+            self.logger.error(f"❌ Zero 패턴 분석 중 오류: {e}")
             return {"has_one_sided_zero": False}
     
     def _validate_specific_config(self, config: Dict[str, Any]) -> bool:
-        """Zero 탐지기 특화 설정 검증"""
+        """[Validation] Zero 탐지기 특화 설정 검증"""
         # Zero 탐지기는 추가 설정 불필요
         return True
 
@@ -674,7 +696,8 @@ class NewStatisticsDetector(BaseAnomalyDetector):
     """
     신규 통계 이상 탐지기
     
-    이전 PKG 버전에 없던 새로운 통계를 탐지합니다.
+    이전 PKG 버전에는 없었지만 현재 버전에 새로 추가된 통계를 탐지합니다.
+    DIMS 정보를 기반으로 신규 PEG 여부를 판단합니다.
     
     Single Responsibility: 신규 통계 검사만 담당
     Dependency Inversion: DimsDataProvider에 의존
@@ -689,12 +712,14 @@ class NewStatisticsDetector(BaseAnomalyDetector):
         """
         super().__init__("NewStatisticsDetector")
         self.dims_provider = dims_provider or MockDimsDataProvider()
+        
+        self.logger.info(f"🆕 신규 통계 탐지기 초기화됨 (Data Provider: {type(self.dims_provider).__name__})")
     
     def _execute_detection(self, 
                           peg_data: Dict[str, List[PegSampleSeries]], 
                           config: Dict[str, Any]) -> AnomalyDetectionResult:
         """
-        신규 통계 탐지 실행
+        [Analysis] 신규 통계 탐지 실행
         
         Args:
             peg_data: PEG 데이터
@@ -710,6 +735,7 @@ class NewStatisticsDetector(BaseAnomalyDetector):
             
             for cell_id, peg_series_list in peg_data.items():
                 for series in peg_series_list:
+                    # DIMS 제공자를 통해 신규 PEG 여부 확인
                     if self.dims_provider.is_new_peg(series.peg_name):
                         affected_cells.add(cell_id)
                         affected_pegs.add(series.peg_name)
@@ -719,23 +745,23 @@ class NewStatisticsDetector(BaseAnomalyDetector):
                             "first_appearance": "current_version"
                         }
                         
-                        self.logger.debug(f"New statistics detected: {cell_id}.{series.peg_name}")
+                        self.logger.debug(f"✨ 신규 통계 감지: {cell_id}.{series.peg_name}")
             
             return AnomalyDetectionResult(
                 anomaly_type="New",
                 affected_cells=affected_cells,
                 affected_pegs=affected_pegs,
                 details=details,
-                confidence=0.8,  # DIMS 데이터 의존성
+                confidence=0.8,  # DIMS 데이터 정확도에 의존
                 metadata={"detection_enabled": True}
             )
             
         except Exception as e:
-            self.logger.error(f"New statistics detection error: {e}")
+            self.logger.error(f"❌ 신규 통계 탐지 중 오류: {e}")
             raise
     
     def _validate_specific_config(self, config: Dict[str, Any]) -> bool:
-        """신규 통계 탐지기 특화 설정 검증"""
+        """[Validation] 신규 통계 탐지기 특화 설정 검증"""
         return True
 
 
@@ -748,6 +774,8 @@ class HighDeltaAnomalyDetector(BaseAnomalyDetector):
     High Delta 이상 탐지기
     
     δ > β3 조건을 만족하는 높은 변화율을 탐지합니다.
+    - 변화율(δ) = (Post - Pre) / Pre * 100
+    - 예기치 않은 급격한 트래픽/성능 변화를 감지하는 것이 목적입니다.
     
     Single Responsibility: High Delta 검사만 담당
     """
@@ -760,7 +788,7 @@ class HighDeltaAnomalyDetector(BaseAnomalyDetector):
                           peg_data: Dict[str, List[PegSampleSeries]], 
                           config: Dict[str, Any]) -> AnomalyDetectionResult:
         """
-        High Delta 이상 탐지 실행
+        [Analysis] High Delta 이상 탐지 실행
         
         Args:
             peg_data: PEG 데이터
@@ -784,7 +812,7 @@ class HighDeltaAnomalyDetector(BaseAnomalyDetector):
                         affected_pegs.add(series.peg_name)
                         details[f"{cell_id}.{series.peg_name}"] = delta_info
                         
-                        self.logger.debug(f"High Delta detected: {cell_id}.{series.peg_name} "
+                        self.logger.debug(f"📈 High Delta 감지: {cell_id}.{series.peg_name} "
                                         f"(δ={delta_info['delta_percentage']:.1f}% > {beta_3}%)")
             
             return AnomalyDetectionResult(
@@ -797,12 +825,12 @@ class HighDeltaAnomalyDetector(BaseAnomalyDetector):
             )
             
         except Exception as e:
-            self.logger.error(f"High Delta detection error: {e}")
+            self.logger.error(f"❌ High Delta 탐지 실행 중 오류: {e}")
             raise
     
     def _calculate_delta(self, series: PegSampleSeries, beta_3: float) -> Dict[str, Any]:
         """
-        변화율 계산 및 High Delta 판정
+        [Helper] 변화율 계산 및 High Delta 판정
         
         Args:
             series: PEG 시리즈
@@ -832,7 +860,8 @@ class HighDeltaAnomalyDetector(BaseAnomalyDetector):
                 if post_mean == 0:
                     delta_pct = 0.0
                 else:
-                    delta_pct = 100.0 if post_mean > 0 else -100.0
+                    # Pre가 0인데 Post가 있으면 무한대 증가로 간주 (방향에 따라 +/-)
+                    delta_pct = 10000.0 if post_mean > 0 else -10000.0 # 임의의 큰 값
                 calculation_note = "pre_mean_zero_special_case"
             else:
                 delta_pct = ((post_mean - pre_mean) / pre_mean) * 100
@@ -854,18 +883,18 @@ class HighDeltaAnomalyDetector(BaseAnomalyDetector):
             }
             
         except Exception as e:
-            self.logger.error(f"Delta calculation error: {e}")
+            self.logger.error(f"❌ Delta 계산 중 오류: {e}")
             return {"delta_percentage": None, "is_high_delta": False, "calculation_error": str(e)}
     
     def _validate_specific_config(self, config: Dict[str, Any]) -> bool:
-        """High Delta 탐지기 특화 설정 검증"""
+        """[Validation] High Delta 탐지기 특화 설정 검증"""
         beta_3 = config.get("beta_3", 500.0)  # 기본값 제공
         
         if not isinstance(beta_3, (int, float)) or beta_3 <= 0:
             self.logger.error(f"beta_3 must be a positive number, got {beta_3}")
             return False
         
-        self.logger.debug(f"High Delta detector validated with beta_3={beta_3}")
+        # self.logger.debug(f"High Delta detector validated with beta_3={beta_3}")
         return True
 
 
@@ -885,7 +914,7 @@ class DimsDataProvider(ABC):
     @abstractmethod
     def get_peg_range(self, peg_name: str) -> Optional[Dict[str, float]]:
         """
-        PEG의 Range 정보 조회
+        [Abstract] PEG의 Range 정보 조회
         
         Args:
             peg_name: PEG 이름
@@ -898,7 +927,7 @@ class DimsDataProvider(ABC):
     @abstractmethod
     def is_new_peg(self, peg_name: str) -> bool:
         """
-        신규 PEG 여부 확인
+        [Abstract] 신규 PEG 여부 확인
         
         Args:
             peg_name: PEG 이름
@@ -910,7 +939,7 @@ class DimsDataProvider(ABC):
     
     @abstractmethod
     def get_provider_info(self) -> Dict[str, Any]:
-        """제공자 정보 반환"""
+        """[Abstract] 제공자 메타 정보 반환"""
         pass
 
 
@@ -918,14 +947,15 @@ class MockDimsDataProvider(DimsDataProvider):
     """
     Mock DIMS 데이터 제공자
     
-    테스트 및 개발 환경용 Mock 구현
+    테스트 및 개발 환경용 Mock 구현체입니다.
+    실제 DIMS 연동 없이 테스트를 수행할 수 있게 해줍니다.
     """
     
     def __init__(self):
         """Mock 제공자 초기화"""
         self.logger = logging.getLogger(f"{__name__}.{self.__class__.__name__}")
         
-        # Mock Range 데이터
+        # Mock Range 데이터 (예시 데이터)
         self.mock_ranges = {
             "AirMacDLThruAvg": {"min": 500.0, "max": 5000.0},
             "AirMacULThruAvg": {"min": 100.0, "max": 2000.0},
@@ -935,7 +965,7 @@ class MockDimsDataProvider(DimsDataProvider):
         # Mock 신규 PEG 목록
         self.new_pegs = {"NewPEG2025", "TestPEG_v2"}
         
-        self.logger.info(f"Mock DIMS provider initialized with {len(self.mock_ranges)} ranges")
+        self.logger.info(f"🧪 Mock DIMS 제공자 초기화됨 ({len(self.mock_ranges)} ranges)")
     
     def get_peg_range(self, peg_name: str) -> Optional[Dict[str, float]]:
         """Mock Range 정보 반환"""
@@ -967,7 +997,7 @@ class AnomalyDetectorFactory:
     이상 탐지기 팩토리
     
     Factory Pattern과 Dependency Injection을 결합하여
-    탐지기 인스턴스를 생성하고 관리합니다.
+    탐지기 인스턴스를 생성하고 관리합니다. 추후 DIMS 제공자 등 의존성을 관리하기 쉽습니다.
     """
     
     def __init__(self, dims_provider: Optional[DimsDataProvider] = None):
@@ -980,15 +1010,15 @@ class AnomalyDetectorFactory:
         self.dims_provider = dims_provider or MockDimsDataProvider()
         self.logger = logging.getLogger(f"{__name__}.{self.__class__.__name__}")
         
-        self.logger.info(f"Anomaly detector factory initialized")
+        self.logger.info(f"🛠️ 이상 탐지기 팩토리 초기화 완료")
     
     def create_range_detector(self) -> RangeAnomalyDetector:
         """Range 탐지기 생성"""
         return RangeAnomalyDetector(self.dims_provider)
     
-    def create_nd_detector(self) -> NDanomalyDetector:
+    def create_nd_detector(self) -> NDAnomalyDetector:
         """ND 탐지기 생성"""
-        return NDanomalyDetector()
+        return NDAnomalyDetector()
     
     def create_zero_detector(self, zero_tolerance: float = 1e-10) -> ZeroAnomalyDetector:
         """Zero 탐지기 생성"""
@@ -1041,4 +1071,4 @@ class AnomalyDetectorFactory:
 # 초기화 및 로깅
 # =============================================================================
 
-logger.info("Anomaly detectors module loaded successfully")
+logger.info("✅ Anomaly detectors module loaded successfully")

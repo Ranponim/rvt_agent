@@ -1005,7 +1005,7 @@ class SimilarAnalyzer(BaseKPIAnalyzer):
                            compare_metrics: PegCompareMetrics,
                            config: Dict[str, Any]) -> bool:
         """
-        Similar 규칙 적용 가능성 확인
+        [Rule] Similar 규칙 적용 가능성 확인
         
         평균값이 있고 ND가 없으며, Improve/Degrade가 아닌 경우에만 적용
         """
@@ -1014,12 +1014,12 @@ class SimilarAnalyzer(BaseKPIAnalyzer):
                 compare_metrics.delta_pct is not None)
     
     def _execute_analysis(self, 
-                         pre_stats: PegPeriodStats,
-                         post_stats: PegPeriodStats,
-                         compare_metrics: PegCompareMetrics,
-                         config: Dict[str, Any]) -> Optional[KPIAnalysisResult]:
+                          pre_stats: PegPeriodStats,
+                          post_stats: PegPeriodStats,
+                          compare_metrics: PegCompareMetrics,
+                          config: Dict[str, Any]) -> Optional[KPIAnalysisResult]:
         """
-        Similar 분석 실행
+        [Analysis] Similar 분석 실행
         
         Args:
             pre_stats: Pre 기간 통계
@@ -1053,6 +1053,8 @@ class SimilarAnalyzer(BaseKPIAnalyzer):
                     similar_analysis, volume_analysis, delta_analysis
                 )
                 
+                self.logger.debug(f"🔵 Similar 감지: {reasoning}")
+                
                 return KPIAnalysisResult(
                     judgement_type=JudgementType.OK,  # Similar는 OK로 분류
                     compare_detail=CompareDetail.SIMILAR,
@@ -1067,7 +1069,7 @@ class SimilarAnalyzer(BaseKPIAnalyzer):
             return None  # Similar가 아님
             
         except Exception as e:
-            self.logger.error(f"Similar analysis error: {e}")
+            self.logger.error(f"❌ Similar 분석 중 오류: {e}")
             raise
     
     def _classify_traffic_volume(self, 
@@ -1075,7 +1077,7 @@ class SimilarAnalyzer(BaseKPIAnalyzer):
                                post_stats: PegPeriodStats, 
                                beta_0: float) -> Dict[str, Any]:
         """
-        트래픽 볼륨 분류 (β0 기준)
+        [Helper] 트래픽 볼륨 분류 (β0 기준)
         
         Args:
             pre_stats: Pre 기간 통계
@@ -1097,10 +1099,10 @@ class SimilarAnalyzer(BaseKPIAnalyzer):
             
             # 선택된 임계값 결정
             if is_low_traffic:
-                selected_threshold = 10.0  # β2 (저트래픽용)
+                selected_threshold = 10.0  # β2 (저트래픽용 - 기본값)
                 traffic_classification = "low"
             else:
-                selected_threshold = 5.0   # β1 (고트래픽용)
+                selected_threshold = 5.0   # β1 (고트래픽용 - 기본값)
                 traffic_classification = "high"
             
             return {
@@ -1115,25 +1117,19 @@ class SimilarAnalyzer(BaseKPIAnalyzer):
             }
             
         except Exception as e:
-            self.logger.error(f"Traffic volume classification error: {e}")
+            self.logger.error(f"❌ 트래픽 볼륨 분류 오류: {e}")
             return {"traffic_classification": "unknown", "selected_threshold": 10.0}
     
     def _calculate_delta_percentage(self, pre_stats: PegPeriodStats, post_stats: PegPeriodStats) -> Dict[str, Any]:
         """
-        델타 백분율 계산
+        [Helper] 델타 백분율 계산
         
-        Args:
-            pre_stats: Pre 기간 통계
-            post_stats: Post 기간 통계
-            
-        Returns:
-            Dict[str, Any]: 델타 계산 결과
+        δ = (post-pre)/pre * 100
         """
         try:
             pre_mean = pre_stats.mean or 0.0
             post_mean = post_stats.mean or 0.0
             
-            # δ = (post-pre)/pre * 100 계산
             if pre_mean == 0:
                 if post_mean == 0:
                     delta_pct = 0.0
@@ -1145,7 +1141,6 @@ class SimilarAnalyzer(BaseKPIAnalyzer):
                 delta_pct = ((post_mean - pre_mean) / pre_mean) * 100
                 calculation_note = "normal_calculation"
             
-            # 절댓값 계산
             abs_delta = abs(delta_pct)
             
             return {
@@ -1157,7 +1152,7 @@ class SimilarAnalyzer(BaseKPIAnalyzer):
             }
             
         except Exception as e:
-            self.logger.error(f"Delta calculation error: {e}")
+            self.logger.error(f"❌ 델타 계산 오류: {e}")
             return {"delta_percentage": 0.0, "abs_delta": 0.0, "calculation_note": "error"}
     
     def _apply_similar_logic(self, 
@@ -1167,23 +1162,13 @@ class SimilarAnalyzer(BaseKPIAnalyzer):
                            beta_2: float, 
                            beta_5: float) -> Dict[str, Any]:
         """
-        Similar 판정 로직 적용
+        [Helper] Similar 판정 로직 적용
         
         복잡한 의사결정 트리:
         1. 트래픽 볼륨에 따른 임계값 선택
         2. 상대적 델타 검사 (β1 또는 β2)
         3. 절대적 델타 검사 (β5)
         4. 두 조건 모두 만족해야 Similar
-        
-        Args:
-            volume_analysis: 볼륨 분류 결과
-            delta_analysis: 델타 계산 결과
-            beta_1: 고트래픽 임계값
-            beta_2: 저트래픽 임계값
-            beta_5: 절대값 임계값
-            
-        Returns:
-            Dict[str, Any]: Similar 판정 결과
         """
         try:
             abs_delta = delta_analysis["abs_delta"]
@@ -1210,14 +1195,14 @@ class SimilarAnalyzer(BaseKPIAnalyzer):
             }
             
         except Exception as e:
-            self.logger.error(f"Similar logic application error: {e}")
+            self.logger.error(f"❌ Similar 로직 적용 오류: {e}")
             return {"is_similar": False, "error": str(e)}
     
     def _generate_similar_reasoning(self, 
                                   similar_analysis: Dict[str, Any], 
                                   volume_analysis: Dict[str, Any], 
                                   delta_analysis: Dict[str, Any]) -> str:
-        """Similar 판정 근거 생성"""
+        """[Helper] Similar 판정 근거 생성"""
         traffic_type = volume_analysis["traffic_classification"]
         threshold_type = volume_analysis["threshold_type"]
         selected_threshold = similar_analysis["selected_threshold"]
@@ -1229,7 +1214,7 @@ class SimilarAnalyzer(BaseKPIAnalyzer):
                f"두 조건 모두 만족")
     
     def _validate_specific_config(self, config: Dict[str, Any]) -> bool:
-        """Similar 분석기 특화 설정 검증"""
+        """[Validation] Similar 분석기 특화 설정 검증"""
         required_betas = ["beta_0", "beta_1", "beta_2", "beta_5"]
         for beta in required_betas:
             value = config.get(beta)
@@ -1258,7 +1243,9 @@ class LowDeltaAnalyzer(BaseKPIAnalyzer):
     """
     Low Delta 분석기
     
-    β2 < δ ≤ 2*β2 (저트래픽) 또는 β1 < δ ≤ 2*β1 (고트래픽) 조건 검사
+    Low Delta 조건에 해당하는지 검사합니다.
+    - 저트래픽: β2 < δ ≤ 2*β2
+    - 고트래픽: β1 < δ ≤ 2*β1
     
     Single Responsibility: Low Delta 조건 검사만 담당
     """
@@ -1275,17 +1262,32 @@ class LowDeltaAnalyzer(BaseKPIAnalyzer):
                            post_stats: PegPeriodStats,
                            compare_metrics: PegCompareMetrics,
                            config: Dict[str, Any]) -> bool:
-        """Low Delta 규칙 적용 가능성 확인"""
+        """
+        [Rule] Low Delta 규칙 적용 가능성 확인
+        
+        평균값이 있고 ND가 없으며, 델타값이 존재하는 경우 적용 가능
+        """
         return (not compare_metrics.has_nd and 
                 pre_stats.mean is not None and post_stats.mean is not None and
                 compare_metrics.delta_pct is not None)
     
     def _execute_analysis(self, 
-                         pre_stats: PegPeriodStats,
-                         post_stats: PegPeriodStats,
-                         compare_metrics: PegCompareMetrics,
-                         config: Dict[str, Any]) -> Optional[KPIAnalysisResult]:
-        """Low Delta 분석 실행"""
+                          pre_stats: PegPeriodStats,
+                          post_stats: PegPeriodStats,
+                          compare_metrics: PegCompareMetrics,
+                          config: Dict[str, Any]) -> Optional[KPIAnalysisResult]:
+        """
+        [Analysis] Low Delta 분석 실행
+        
+        Args:
+            pre_stats: Pre 기간 통계
+            post_stats: Post 기간 통계
+            compare_metrics: 비교 지표
+            config: 분석 설정
+            
+        Returns:
+            Optional[KPIAnalysisResult]: Low Delta 분석 결과
+        """
         try:
             # β 임계값들 추출
             beta_0 = config.get("beta_0", 1000.0)
@@ -1306,6 +1308,8 @@ class LowDeltaAnalyzer(BaseKPIAnalyzer):
                     delta_classification, volume_analysis, delta_analysis
                 )
                 
+                self.logger.debug(f"🟡 Low Delta 감지: {reasoning}")
+                
                 return KPIAnalysisResult(
                     judgement_type=JudgementType.NOK,  # Low Delta는 NOK
                     compare_detail=CompareDetail.LOW_DELTA,
@@ -1318,7 +1322,7 @@ class LowDeltaAnalyzer(BaseKPIAnalyzer):
             return None
             
         except Exception as e:
-            self.logger.error(f"Low Delta analysis error: {e}")
+            self.logger.error(f"❌ Low Delta 분석 중 오류: {e}")
             raise
     
     def _classify_delta_level(self, 
@@ -1326,7 +1330,7 @@ class LowDeltaAnalyzer(BaseKPIAnalyzer):
                             delta_analysis: Dict[str, Any], 
                             beta_1: float, 
                             beta_2: float) -> Dict[str, Any]:
-        """델타 수준 분류"""
+        """[Helper] 델타 수준 분류"""
         try:
             abs_delta = delta_analysis["abs_delta"]
             is_low_traffic = volume_analysis["is_low_traffic"]
@@ -1354,14 +1358,14 @@ class LowDeltaAnalyzer(BaseKPIAnalyzer):
             }
             
         except Exception as e:
-            self.logger.error(f"Delta level classification error: {e}")
+            self.logger.error(f"❌ 델타 수준 분류 오류: {e}")
             return {"is_low_delta": False, "error": str(e)}
     
     def _generate_low_delta_reasoning(self, 
                                     delta_classification: Dict[str, Any], 
                                     volume_analysis: Dict[str, Any], 
                                     delta_analysis: Dict[str, Any]) -> str:
-        """Low Delta 판정 근거 생성"""
+        """[Helper] Low Delta 판정 근거 생성"""
         traffic_type = volume_analysis["traffic_classification"]
         threshold_type = delta_classification["threshold_type"]
         lower_bound = delta_classification["lower_bound"]
@@ -1372,7 +1376,7 @@ class LowDeltaAnalyzer(BaseKPIAnalyzer):
                f"{lower_bound} < |δ|={abs_delta:.1f} ≤ {upper_bound}")
     
     def _validate_specific_config(self, config: Dict[str, Any]) -> bool:
-        """Low Delta 분석기 특화 설정 검증"""
+        """[Validation] Low Delta 분석기 특화 설정 검증"""
         required_betas = ["beta_0", "beta_1", "beta_2"]
         for beta in required_betas:
             if config.get(beta) is None:
@@ -1385,7 +1389,9 @@ class MediumDeltaAnalyzer(BaseKPIAnalyzer):
     """
     Medium Delta 분석기
     
-    2*β2 < δ ≤ β3 (저트래픽) 또는 2*β1 < δ ≤ β3 (고트래픽) 조건 검사
+    Medium Delta 조건에 해당하는지 검사합니다.
+    - 저트래픽: 2*β2 < δ ≤ β3
+    - 고트래픽: 2*β1 < δ ≤ β3
     
     Single Responsibility: Medium Delta 조건 검사만 담당
     """
@@ -1403,17 +1409,32 @@ class MediumDeltaAnalyzer(BaseKPIAnalyzer):
                            post_stats: PegPeriodStats,
                            compare_metrics: PegCompareMetrics,
                            config: Dict[str, Any]) -> bool:
-        """Medium Delta 규칙 적용 가능성 확인"""
+        """
+        [Rule] Medium Delta 규칙 적용 가능성 확인
+        
+        평균값이 있고 ND가 없으며, 델타값이 존재하는 경우 적용 가능
+        """
         return (not compare_metrics.has_nd and 
                 pre_stats.mean is not None and post_stats.mean is not None and
                 compare_metrics.delta_pct is not None)
     
     def _execute_analysis(self, 
-                         pre_stats: PegPeriodStats,
-                         post_stats: PegPeriodStats,
-                         compare_metrics: PegCompareMetrics,
-                         config: Dict[str, Any]) -> Optional[KPIAnalysisResult]:
-        """Medium Delta 분석 실행"""
+                          pre_stats: PegPeriodStats,
+                          post_stats: PegPeriodStats,
+                          compare_metrics: PegCompareMetrics,
+                          config: Dict[str, Any]) -> Optional[KPIAnalysisResult]:
+        """
+        [Analysis] Medium Delta 분석 실행
+        
+        Args:
+            pre_stats: Pre 기간 통계
+            post_stats: Post 기간 통계
+            compare_metrics: 비교 지표
+            config: 분석 설정
+            
+        Returns:
+            Optional[KPIAnalysisResult]: Medium Delta 분석 결과
+        """
         try:
             # β 임계값들 추출
             beta_0 = config.get("beta_0", 1000.0)
@@ -1435,6 +1456,8 @@ class MediumDeltaAnalyzer(BaseKPIAnalyzer):
                     delta_classification, volume_analysis, delta_analysis
                 )
                 
+                self.logger.debug(f"🟠 Medium Delta 감지: {reasoning}")
+                
                 return KPIAnalysisResult(
                     judgement_type=JudgementType.NOK,  # Medium Delta는 NOK
                     compare_detail=CompareDetail.MEDIUM_DELTA,
@@ -1447,7 +1470,7 @@ class MediumDeltaAnalyzer(BaseKPIAnalyzer):
             return None
             
         except Exception as e:
-            self.logger.error(f"Medium Delta analysis error: {e}")
+            self.logger.error(f"❌ Medium Delta 분석 중 오류: {e}")
             raise
     
     def _classify_medium_delta_level(self, 
@@ -1456,7 +1479,7 @@ class MediumDeltaAnalyzer(BaseKPIAnalyzer):
                                    beta_1: float, 
                                    beta_2: float, 
                                    beta_3: float) -> Dict[str, Any]:
-        """Medium Delta 수준 분류"""
+        """[Helper] Medium Delta 수준 분류"""
         try:
             abs_delta = delta_analysis["abs_delta"]
             is_low_traffic = volume_analysis["is_low_traffic"]
@@ -1484,14 +1507,14 @@ class MediumDeltaAnalyzer(BaseKPIAnalyzer):
             }
             
         except Exception as e:
-            self.logger.error(f"Medium delta classification error: {e}")
+            self.logger.error(f"❌ Medium delta 분류 오류: {e}")
             return {"is_medium_delta": False, "error": str(e)}
     
     def _generate_medium_delta_reasoning(self, 
                                        delta_classification: Dict[str, Any], 
                                        volume_analysis: Dict[str, Any], 
                                        delta_analysis: Dict[str, Any]) -> str:
-        """Medium Delta 판정 근거 생성"""
+        """[Helper] Medium Delta 판정 근거 생성"""
         traffic_type = volume_analysis["traffic_classification"]
         threshold_type = delta_classification["threshold_type"]
         lower_bound = delta_classification["lower_bound"]
@@ -1502,7 +1525,7 @@ class MediumDeltaAnalyzer(BaseKPIAnalyzer):
                f"{lower_bound} < |δ|={abs_delta:.1f} ≤ {upper_bound}")
     
     def _validate_specific_config(self, config: Dict[str, Any]) -> bool:
-        """Medium Delta 분석기 특화 설정 검증"""
+        """[Validation] Medium Delta 분석기 특화 설정 검증"""
         required_betas = ["beta_0", "beta_1", "beta_2", "beta_3"]
         for beta in required_betas:
             if config.get(beta) is None:
@@ -1515,7 +1538,10 @@ class HighDeltaAnalyzer(BaseKPIAnalyzer):
     """
     High Delta 분석기 (KPI 분석용)
     
-    δ > β3 조건 검사 (이상 탐지의 High Delta와 동일하지만 다른 컨텍스트)
+    High Delta 조건에 해당하는지 검사합니다.
+    - 조건: |δ| > β3
+    
+    참고: 이상 탐지(Anomaly Detection)의 High Delta와는 이름은 같지만 컨텍스트가 다릅니다.
     
     Single Responsibility: High Delta 조건 검사만 담당
     """
@@ -1532,17 +1558,32 @@ class HighDeltaAnalyzer(BaseKPIAnalyzer):
                            post_stats: PegPeriodStats,
                            compare_metrics: PegCompareMetrics,
                            config: Dict[str, Any]) -> bool:
-        """High Delta 규칙 적용 가능성 확인"""
+        """
+        [Rule] High Delta 규칙 적용 가능성 확인
+        
+        평균값이 있고 ND가 없으며, 델타값이 존재하는 경우 적용 가능
+        """
         return (not compare_metrics.has_nd and 
                 pre_stats.mean is not None and post_stats.mean is not None and
                 compare_metrics.delta_pct is not None)
     
     def _execute_analysis(self, 
-                         pre_stats: PegPeriodStats,
-                         post_stats: PegPeriodStats,
-                         compare_metrics: PegCompareMetrics,
-                         config: Dict[str, Any]) -> Optional[KPIAnalysisResult]:
-        """High Delta 분석 실행"""
+                          pre_stats: PegPeriodStats,
+                          post_stats: PegPeriodStats,
+                          compare_metrics: PegCompareMetrics,
+                          config: Dict[str, Any]) -> Optional[KPIAnalysisResult]:
+        """
+        [Analysis] High Delta 분석 실행
+        
+        Args:
+            pre_stats: Pre 기간 통계
+            post_stats: Post 기간 통계
+            compare_metrics: 비교 지표
+            config: 분석 설정
+            
+        Returns:
+            Optional[KPIAnalysisResult]: High Delta 분석 결과
+        """
         try:
             beta_3 = config.get("beta_3", 500.0)
             
@@ -1556,6 +1597,8 @@ class HighDeltaAnalyzer(BaseKPIAnalyzer):
             if is_high_delta:
                 reasoning = f"높은 변화량: |δ|={abs_delta:.1f} > β3({beta_3})"
                 
+                self.logger.debug(f"🔴 High Delta 감지: {reasoning}")
+                
                 return KPIAnalysisResult(
                     judgement_type=JudgementType.NOK,  # High Delta는 NOK
                     compare_detail=CompareDetail.HIGH_DELTA,
@@ -1568,11 +1611,11 @@ class HighDeltaAnalyzer(BaseKPIAnalyzer):
             return None
             
         except Exception as e:
-            self.logger.error(f"High Delta analysis error: {e}")
+            self.logger.error(f"❌ High Delta 분석 중 오류: {e}")
             raise
     
     def _validate_specific_config(self, config: Dict[str, Any]) -> bool:
-        """High Delta 분석기 특화 설정 검증"""
+        """[Validation] High Delta 분석기 특화 설정 검증"""
         beta_3 = config.get("beta_3")
         if beta_3 is None:
             self.logger.error("beta_3 threshold is required")
@@ -1598,9 +1641,9 @@ class KPIAnalyzerFactory:
     """
     
     def __init__(self):
-        """팩토리 초기화"""
+        """KPI 분석기 팩토리 초기화"""
         self.logger = logging.getLogger(f"{__name__}.{self.__class__.__name__}")
-        self.logger.info("KPI analyzer factory initialized")
+        self.logger.info("🛠️ KPI 분석기 팩토리 초기화 완료")
     
     def create_cant_judge_analyzer(self) -> CantJudgeAnalyzer:
         """Can't Judge 분석기 생성"""
@@ -1655,12 +1698,15 @@ class KPIAnalyzerFactory:
         # 우선순위 내림차순 정렬
         analyzers.sort(key=lambda x: x.get_priority(), reverse=True)
         
-        self.logger.info(f"Created {len(analyzers)} analyzers in priority order")
+        self.logger.info(f"✅ {len(analyzers)}개의 KPI 분석기 생성 및 우선순위 정렬 완료")
         return analyzers
     
     def get_available_analyzers(self) -> List[str]:
-        """사용 가능한 분석기 목록"""
-        return ["cant_judge", "high_variation", "improve", "degrade"]
+        """사용 가능한 분석기 목록 조회"""
+        return [
+            "cant_judge", "high_variation", "improve", "degrade",
+            "high_delta", "medium_delta", "low_delta", "similar"
+        ]
 
 
 
@@ -1669,4 +1715,4 @@ class KPIAnalyzerFactory:
 # 초기화 및 로깅
 # =============================================================================
 
-logger.info("KPI analyzers module loaded successfully")
+logger.info("✅ KPI analyzers module loaded successfully")
