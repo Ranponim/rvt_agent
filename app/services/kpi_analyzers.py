@@ -141,7 +141,7 @@ class BaseKPIAnalyzer(ABC):
         self.version = version
         self.logger = logging.getLogger(f"{__name__}.{self.__class__.__name__}")
         
-        self.logger.info(f"KPI analyzer '{analyzer_name}' v{version} initialized (priority: {priority.value})")
+        self.logger.info(f"🛠️ KPI 분석기 '{analyzer_name}' v{version} 초기화 (우선순위: {priority.value})")
     
     @log_analyzer_execution()
     def analyze(self, 
@@ -150,7 +150,14 @@ class BaseKPIAnalyzer(ABC):
                 compare_metrics: PegCompareMetrics,
                 config: Dict[str, Any]) -> Optional[KPIAnalysisResult]:
         """
-        템플릿 메서드: KPI 분석 실행
+        [Template Method] KPI 분석 실행
+        
+        분석 프로세스의 뼈대를 정의합니다:
+        1. 설정 검증
+        2. 입력 데이터 검증
+        3. 규칙 적용 가능성 확인
+        4. 실제 분석 로직 실행 (하위 클래스)
+        5. 결과 검증
         
         Args:
             pre_stats: Pre 기간 통계
@@ -159,7 +166,7 @@ class BaseKPIAnalyzer(ABC):
             config: 분석 설정
             
         Returns:
-            Optional[KPIAnalysisResult]: 분석 결과
+            Optional[KPIAnalysisResult]: 분석 결과 (해당 없으면 None)
         """
         try:
             # 1. 설정 검증
@@ -168,16 +175,16 @@ class BaseKPIAnalyzer(ABC):
             
             # 2. 입력 데이터 검증
             if not self._validate_input_data(pre_stats, post_stats, compare_metrics):
-                self.logger.debug(f"{self.analyzer_name}: Input validation failed, skipping analysis")
+                self.logger.debug(f"⚠️ {self.analyzer_name}: 입력 데이터 검증 실패, 분석 건너뜀")
                 return None
             
             # 3. 규칙 적용 가능성 확인
             if not self._is_rule_applicable(pre_stats, post_stats, compare_metrics, config):
-                self.logger.debug(f"{self.analyzer_name}: Rule not applicable, skipping")
+                # self.logger.debug(f"ℹ️ {self.analyzer_name}: 규칙 적용 조건 미충족, 건너뜀")
                 return None
             
             # 4. 실제 분석 로직 실행 (하위 클래스에서 구현)
-            self.logger.debug(f"Executing {self.analyzer_name} analysis")
+            self.logger.debug(f"🚀 {self.analyzer_name} 분석 실행 중...")
             analysis_result = self._execute_analysis(pre_stats, post_stats, compare_metrics, config)
             
             # 5. 결과 검증
@@ -185,13 +192,13 @@ class BaseKPIAnalyzer(ABC):
                 raise RuntimeError(f"Invalid analysis result from {self.analyzer_name}")
             
             if analysis_result:
-                self.logger.info(f"{self.analyzer_name} analysis completed: "
+                self.logger.info(f"✅ {self.analyzer_name} 분석 완료: "
                                f"{analysis_result.judgement_type} ({analysis_result.compare_detail})")
             
             return analysis_result
             
         except Exception as e:
-            self.logger.error(f"Error in {self.analyzer_name} analysis: {e}")
+            self.logger.error(f"❌ {self.analyzer_name} 분석 중 오류: {e}", exc_info=True)
             raise
     
     @abstractmethod
@@ -201,16 +208,9 @@ class BaseKPIAnalyzer(ABC):
                          compare_metrics: PegCompareMetrics,
                          config: Dict[str, Any]) -> Optional[KPIAnalysisResult]:
         """
-        실제 분석 로직 구현 (하위 클래스에서 구현)
+        [Abstract] 실제 분석 로직 구현
         
-        Args:
-            pre_stats: Pre 기간 통계
-            post_stats: Post 기간 통계
-            compare_metrics: 비교 지표
-            config: 분석 설정
-            
-        Returns:
-            Optional[KPIAnalysisResult]: 분석 결과
+        하위 클래스에서 구체적인 분석 알고리즘을 구현해야 합니다.
         """
         pass
     
@@ -221,16 +221,9 @@ class BaseKPIAnalyzer(ABC):
                            compare_metrics: PegCompareMetrics,
                            config: Dict[str, Any]) -> bool:
         """
-        규칙 적용 가능성 확인 (하위 클래스에서 구현)
+        [Abstract] 규칙 적용 가능성 확인
         
-        Args:
-            pre_stats: Pre 기간 통계
-            post_stats: Post 기간 통계
-            compare_metrics: 비교 지표
-            config: 분석 설정
-            
-        Returns:
-            bool: 규칙 적용 가능 여부
+        하위 클래스에서 분석을 수행하기 위한 전제 조건을 구현해야 합니다.
         """
         pass
     
@@ -348,7 +341,8 @@ class CantJudgeAnalyzer(BaseKPIAnalyzer):
     """
     Can't Judge 분석기
     
-    pre 또는 post 데이터에 ND가 포함된 경우 판정 불가로 처리합니다.
+    pre 또는 post 데이터에 ND(No Data)가 포함된 경우를 탐지하여 판정 불가로 처리합니다.
+    (ND는 데이터가 없는 상태를 의미)
     
     Single Responsibility: Can't Judge 조건 검사만 담당
     """
@@ -363,9 +357,10 @@ class CantJudgeAnalyzer(BaseKPIAnalyzer):
                            compare_metrics: PegCompareMetrics,
                            config: Dict[str, Any]) -> bool:
         """
-        Can't Judge 규칙 적용 가능성 확인
+        [Rule] Can't Judge 규칙 적용 가능성 확인
         
-        ND가 포함된 경우에만 적용 가능
+        ND가 포함된 경우에만 적용 가능합니다.
+        (ND 비율 > 0)
         """
         return compare_metrics.has_nd or pre_stats.nd_ratio > 0 or post_stats.nd_ratio > 0
     
@@ -375,7 +370,9 @@ class CantJudgeAnalyzer(BaseKPIAnalyzer):
                          compare_metrics: PegCompareMetrics,
                          config: Dict[str, Any]) -> Optional[KPIAnalysisResult]:
         """
-        Can't Judge 분석 실행
+        [Analysis] Can't Judge 분석 실행
+        
+        ND 패턴을 분석하여 판정 불가 사유를 생성합니다.
         
         Args:
             pre_stats: Pre 기간 통계
@@ -392,27 +389,27 @@ class CantJudgeAnalyzer(BaseKPIAnalyzer):
             
             reasoning = self._generate_cant_judge_reasoning(nd_analysis)
             
+            self.logger.debug(f"🔍 ND 분석 결과: {nd_analysis['nd_pattern']} (Pre: {nd_analysis['pre_nd_ratio']:.1%}, Post: {nd_analysis['post_nd_ratio']:.1%})")
+            
             return KPIAnalysisResult(
                 judgement_type=JudgementType.CANT_JUDGE,
                 compare_detail=CompareDetail.CANT_JUDGE,
                 reasoning=reasoning,
-                confidence=1.0,  # ND 존재는 확실한 조건
+                confidence=1.0,  # ND 존재는 확실한 조건이므로 신뢰도 1.0
                 metrics=nd_analysis,
                 thresholds_used={}
             )
             
         except Exception as e:
-            self.logger.error(f"Can't Judge analysis error: {e}")
+            self.logger.error(f"❌ Can't Judge 분석 중 오류: {e}")
             raise
     
     def _analyze_nd_details(self, pre_stats: PegPeriodStats, post_stats: PegPeriodStats) -> Dict[str, Any]:
         """
-        ND 상세 분석
+        [Helper] ND 상세 분석
         
-        Args:
-            pre_stats: Pre 기간 통계
-            post_stats: Post 기간 통계
-            
+        Pre/Post 기간별 ND 비율과 패턴을 분석합니다.
+        
         Returns:
             Dict[str, Any]: ND 분석 세부 정보
         """
@@ -425,7 +422,7 @@ class CantJudgeAnalyzer(BaseKPIAnalyzer):
         }
     
     def _determine_nd_pattern(self, pre_nd_ratio: float, post_nd_ratio: float) -> str:
-        """ND 패턴 결정"""
+        """[Helper] ND 패턴 결정"""
         if pre_nd_ratio > 0 and post_nd_ratio > 0:
             return "both_periods"
         elif pre_nd_ratio > 0:
@@ -436,7 +433,7 @@ class CantJudgeAnalyzer(BaseKPIAnalyzer):
             return "none"
     
     def _generate_cant_judge_reasoning(self, nd_analysis: Dict[str, Any]) -> str:
-        """Can't Judge 판정 근거 생성"""
+        """[Helper] Can't Judge 판정 근거 생성"""
         pattern = nd_analysis["nd_pattern"]
         pre_ratio = nd_analysis["pre_nd_ratio"]
         post_ratio = nd_analysis["post_nd_ratio"]
@@ -451,10 +448,13 @@ class CantJudgeAnalyzer(BaseKPIAnalyzer):
             return "판정 불가: 데이터 품질 문제"
     
     def _validate_specific_config(self, config: Dict[str, Any]) -> bool:
-        """Can't Judge 분석기 특화 설정 검증"""
-        # Can't Judge는 추가 설정 불필요
+        """[Validation] Can't Judge 분석기 특화 설정 검증 - 추가 설정 불필요"""
         return True
 
+
+# =============================================================================
+# High Variation 분석기
+# =============================================================================
 
 # =============================================================================
 # High Variation 분석기
@@ -464,7 +464,9 @@ class HighVariationAnalyzer(BaseKPIAnalyzer):
     """
     High Variation 분석기
     
-    CV(pre) > β4 또는 CV(post) > β4 조건을 검사합니다.
+    변동계수(CV)가 임계값(β4)을 초과하는지 검사하여 데이터 변동성이 큰 경우를 탐지합니다.
+    - CV(pre) > β4 또는 CV(post) > β4
+    - 특수 케이스: ND/Zero 교차 발생 등의 통계적 불안정 상태
     
     Single Responsibility: High Variation 조건 검사만 담당
     """
@@ -479,9 +481,10 @@ class HighVariationAnalyzer(BaseKPIAnalyzer):
                            compare_metrics: PegCompareMetrics,
                            config: Dict[str, Any]) -> bool:
         """
-        High Variation 규칙 적용 가능성 확인
+        [Rule] High Variation 규칙 적용 가능성 확인
         
-        CV 계산이 가능한 경우에만 적용 가능
+        CV 계산이 가능한 경우(ND 없음)에만 적용 가능합니다.
+        단, 특수 케이스(ND/Zero 교차)도 내부적으로 처리하므로 ND 체크는 완화될 수 있습니다. (여기서는 기본적으로 ND가 없는 경우를 가정하되, 로직 내부에서 특수 케이스 처리)
         """
         return (pre_stats.cv is not None or post_stats.cv is not None) and not compare_metrics.has_nd
     
@@ -491,7 +494,7 @@ class HighVariationAnalyzer(BaseKPIAnalyzer):
                          compare_metrics: PegCompareMetrics,
                          config: Dict[str, Any]) -> Optional[KPIAnalysisResult]:
         """
-        High Variation 분석 실행
+        [Analysis] High Variation 분석 실행
         
         Args:
             pre_stats: Pre 기간 통계
@@ -505,11 +508,13 @@ class HighVariationAnalyzer(BaseKPIAnalyzer):
         try:
             beta_4 = config.get("beta_4", 10.0)
             
-            # CV 분석
+            # CV 및 특수 케이스 분석
             cv_analysis = self._analyze_coefficient_of_variation(pre_stats, post_stats, beta_4)
             
             if cv_analysis["is_high_variation"]:
                 reasoning = self._generate_high_variation_reasoning(cv_analysis, beta_4)
+                
+                self.logger.debug(f"📉 High Variation 감지: {reasoning}")
                 
                 return KPIAnalysisResult(
                     judgement_type=JudgementType.CANT_JUDGE,  # High Variation은 판정 불가로 처리
@@ -523,7 +528,7 @@ class HighVariationAnalyzer(BaseKPIAnalyzer):
             return None  # High Variation이 아님
             
         except Exception as e:
-            self.logger.error(f"High Variation analysis error: {e}")
+            self.logger.error(f"❌ High Variation 분석 중 오류: {e}")
             raise
     
     def _analyze_coefficient_of_variation(self, 
@@ -531,7 +536,7 @@ class HighVariationAnalyzer(BaseKPIAnalyzer):
                                         post_stats: PegPeriodStats, 
                                         beta_4: float) -> Dict[str, Any]:
         """
-        변동계수 분석
+        [Helper] 변동계수(CV) 분석
         
         Args:
             pre_stats: Pre 기간 통계
@@ -569,19 +574,15 @@ class HighVariationAnalyzer(BaseKPIAnalyzer):
             }
             
         except Exception as e:
-            self.logger.error(f"CV analysis error: {e}")
+            self.logger.error(f"❌ CV 분석 오류: {e}")
             return {"is_high_variation": False, "error": str(e)}
     
     def _check_special_variation_cases(self, pre_stats: PegPeriodStats, post_stats: PegPeriodStats) -> Dict[str, Any]:
         """
-        High Variation 특수 케이스 검사 (5.2 항목 2-6)
+        [Helper] High Variation 특수 케이스 검사 (5.2 항목 2-6)
         
-        Args:
-            pre_stats: Pre 기간 통계
-            post_stats: Post 기간 통계
-            
-        Returns:
-            Dict[str, Any]: 특수 케이스 분석 결과
+        ND와 유효값이 교차하거나, Zero와 Non-Zero가 교차하는 경우 등
+        통계적으로 불안정한 상태를 식별합니다.
         """
         special_cases = []
         
@@ -611,7 +612,7 @@ class HighVariationAnalyzer(BaseKPIAnalyzer):
         }
     
     def _generate_high_variation_reasoning(self, cv_analysis: Dict[str, Any], beta_4: float) -> str:
-        """High Variation 판정 근거 생성"""
+        """[Helper] High Variation 판정 근거 생성"""
         pre_cv = cv_analysis["pre_cv"]
         post_cv = cv_analysis["post_cv"]
         special_cases = cv_analysis["special_cases"]
@@ -638,7 +639,7 @@ class HighVariationAnalyzer(BaseKPIAnalyzer):
             return f"High Variation: 특수 조건 만족"
     
     def _validate_specific_config(self, config: Dict[str, Any]) -> bool:
-        """Can't Judge 분석기 특화 설정 검증"""
+        """[Validation] High Variation 분석기 특화 설정 검증"""
         beta_4 = config.get("beta_4")
         if beta_4 is None:
             self.logger.error("beta_4 threshold is required for High Variation detection")
@@ -655,15 +656,19 @@ class HighVariationAnalyzer(BaseKPIAnalyzer):
 # Improve/Degrade 분석기
 # =============================================================================
 
+# =============================================================================
+# Improve/Degrade 분석기
+# =============================================================================
+
 class ImproveAnalyzer(BaseKPIAnalyzer):
     """
     Improve 분석기
     
-    KPI 극성에 따라 성능 개선을 탐지합니다.
-    - Positive KPI: max(pre) < min(post)
-    - Negative KPI: min(pre) > max(post)
+    KPI 극성(Positivity)에 따라 성능 '개선(Improve)' 여부를 탐지합니다.
+    - Positive KPI (높을수록 좋음): max(pre) < min(post)
+    - Negative KPI (낮을수록 좋음): min(pre) > max(post)
     
-    Single Responsibility: 성능 개선 검사만 담당
+    분포가 완전히 분리되어 개선된 방향으로 이동했는지 확인합니다.
     """
     
     def __init__(self):
@@ -676,9 +681,9 @@ class ImproveAnalyzer(BaseKPIAnalyzer):
                            compare_metrics: PegCompareMetrics,
                            config: Dict[str, Any]) -> bool:
         """
-        Improve 규칙 적용 가능성 확인
+        [Rule] Improve 규칙 적용 가능성 확인
         
-        min/max 값이 있고 ND가 없는 경우에만 적용 가능
+        min/max 통계가 존재하고 ND가 없는 경우에만 적용 가능합니다.
         """
         return (not compare_metrics.has_nd and 
                 pre_stats.min is not None and pre_stats.max is not None and
@@ -690,22 +695,22 @@ class ImproveAnalyzer(BaseKPIAnalyzer):
                          compare_metrics: PegCompareMetrics,
                          config: Dict[str, Any]) -> Optional[KPIAnalysisResult]:
         """
-        Improve 분석 실행
+        [Analysis] Improve 분석 실행
         
         Args:
             pre_stats: Pre 기간 통계
             post_stats: Post 기간 통계
             compare_metrics: 비교 지표
-            config: 분석 설정
+            config: 분석 설정 (kpi_positivity 포함)
             
         Returns:
             Optional[KPIAnalysisResult]: Improve 분석 결과
         """
         try:
-            # KPI 극성 확인 (설정에서 가져와야 함, 현재는 기본값)
+            # KPI 극성 확인 (설정에서 가져와야 함, 현재는 기본값 positive)
             kpi_positivity = config.get("kpi_positivity", "positive")
             
-            # 분포 비교 분석
+            # 분포 교차 분석
             distribution_analysis = self._analyze_distribution_separation(
                 pre_stats, post_stats, kpi_positivity
             )
@@ -715,11 +720,13 @@ class ImproveAnalyzer(BaseKPIAnalyzer):
                     distribution_analysis, kpi_positivity
                 )
                 
+                self.logger.debug(f"📈 Improve 감지: {reasoning}")
+                
                 return KPIAnalysisResult(
-                    judgement_type=JudgementType.NOK,  # Improve는 NOK로 분류 (PLM 검증 필요)
+                    judgement_type=JudgementType.NOK,  # Improve는 변화가 크므로 NOK로 분류 (PLM 검증 필요)
                     compare_detail=CompareDetail.IMPROVE,
                     reasoning=reasoning,
-                    confidence=0.9,  # 분포 기반 분석의 높은 신뢰도
+                    confidence=0.9,  # 분포 분리는 강력한 증거
                     metrics=distribution_analysis,
                     thresholds_used={}
                 )
@@ -727,7 +734,7 @@ class ImproveAnalyzer(BaseKPIAnalyzer):
             return None  # Improve가 아님
             
         except Exception as e:
-            self.logger.error(f"Improve analysis error: {e}")
+            self.logger.error(f"❌ Improve 분석 중 오류: {e}")
             raise
     
     def _analyze_distribution_separation(self, 
@@ -735,32 +742,26 @@ class ImproveAnalyzer(BaseKPIAnalyzer):
                                        post_stats: PegPeriodStats, 
                                        kpi_positivity: str) -> Dict[str, Any]:
         """
-        분포 분리 분석
+        [Helper] 분포 분리 분석
         
-        Args:
-            pre_stats: Pre 기간 통계
-            post_stats: Post 기간 통계
-            kpi_positivity: KPI 극성 ("positive" 또는 "negative")
-            
-        Returns:
-            Dict[str, Any]: 분포 분석 결과
+        Pre와 Post의 분포(min~max 범위)가 서로 겹치지 않고 개선된 방향으로 분리되었는지 확인합니다.
         """
         try:
             pre_min, pre_max = pre_stats.min, pre_stats.max
             post_min, post_max = post_stats.min, post_stats.max
             
             if kpi_positivity == "positive":
-                # Positive KPI: max(pre) < min(post) → Improve
+                # Positive KPI: max(pre) < min(post) → Improve (Post가 전체적으로 더 높음)
                 is_improve = pre_max < post_min
                 comparison_type = "max_pre_vs_min_post"
                 comparison_values = {"pre_max": pre_max, "post_min": post_min}
             else:
-                # Negative KPI: min(pre) > max(post) → Improve  
+                # Negative KPI: min(pre) > max(post) → Improve (Post가 전체적으로 더 낮음)
                 is_improve = pre_min > post_max
                 comparison_type = "min_pre_vs_max_post"
                 comparison_values = {"pre_min": pre_min, "post_max": post_max}
             
-            # 분포 겹침 정도 계산
+            # 분포 겹침 정도 계산 (참고용)
             overlap_analysis = self._calculate_distribution_overlap(pre_stats, post_stats)
             
             return {
@@ -773,19 +774,14 @@ class ImproveAnalyzer(BaseKPIAnalyzer):
             }
             
         except Exception as e:
-            self.logger.error(f"Distribution separation analysis error: {e}")
+            self.logger.error(f"❌ 분포 분리 분석 오류: {e}")
             return {"is_improve": False, "error": str(e)}
     
     def _calculate_distribution_overlap(self, pre_stats: PegPeriodStats, post_stats: PegPeriodStats) -> Dict[str, Any]:
         """
-        분포 겹침 계산
+        [Helper] 분포 겹침 계산
         
-        Args:
-            pre_stats: Pre 기간 통계
-            post_stats: Post 기간 통계
-            
-        Returns:
-            Dict[str, Any]: 겹침 분석 결과
+        Pre/Post 범위가 얼마나 겹치는지 계산합니다.
         """
         try:
             # 분포 범위 계산
@@ -813,11 +809,11 @@ class ImproveAnalyzer(BaseKPIAnalyzer):
             }
             
         except Exception as e:
-            self.logger.error(f"Distribution overlap calculation error: {e}")
+            self.logger.error(f"❌ 분포 겹침 계산 오류: {e}")
             return {"has_overlap": True, "error": str(e)}
     
     def _generate_improve_reasoning(self, distribution_analysis: Dict[str, Any], kpi_positivity: str) -> str:
-        """Improve 판정 근거 생성"""
+        """[Helper] Improve 판정 근거 생성"""
         comparison_values = distribution_analysis["comparison_values"]
         overlap_info = distribution_analysis["distribution_overlap"]
         
@@ -833,13 +829,11 @@ class ImproveAnalyzer(BaseKPIAnalyzer):
                    f"분포 분리됨 (겹침 비율: {overlap_info['overlap_ratio']:.1%})")
     
     def _validate_specific_config(self, config: Dict[str, Any]) -> bool:
-        """Improve 분석기 특화 설정 검증"""
-        # KPI 극성 정보가 있으면 검증
+        """[Validation] Improve 분석기 특화 설정 검증"""
         kpi_positivity = config.get("kpi_positivity")
         if kpi_positivity and kpi_positivity not in ["positive", "negative"]:
             self.logger.error(f"Invalid kpi_positivity: {kpi_positivity}")
             return False
-        
         return True
 
 
@@ -847,11 +841,11 @@ class DegradeAnalyzer(BaseKPIAnalyzer):
     """
     Degrade 분석기
     
-    KPI 극성에 따라 성능 저하를 탐지합니다.
-    - Positive KPI: min(pre) > max(post)
-    - Negative KPI: max(pre) < min(post)
+    KPI 극성에 따라 성능 '저하(Degrade)' 여부를 탐지합니다.
+    - Positive KPI (높을수록 좋음): min(pre) > max(post)
+    - Negative KPI (낮을수록 좋음): max(pre) < min(post)
     
-    Single Responsibility: 성능 저하 검사만 담당
+    분포가 완전히 분리되어 저하된 방향으로 이동했는지 확인합니다.
     """
     
     def __init__(self):
@@ -864,9 +858,9 @@ class DegradeAnalyzer(BaseKPIAnalyzer):
                            compare_metrics: PegCompareMetrics,
                            config: Dict[str, Any]) -> bool:
         """
-        Degrade 규칙 적용 가능성 확인
+        [Rule] Degrade 규칙 적용 가능성 확인
         
-        min/max 값이 있고 ND가 없는 경우에만 적용 가능
+        min/max 통계가 존재하고 ND가 없는 경우에만 적용 가능합니다.
         """
         return (not compare_metrics.has_nd and 
                 pre_stats.min is not None and pre_stats.max is not None and
@@ -878,7 +872,7 @@ class DegradeAnalyzer(BaseKPIAnalyzer):
                          compare_metrics: PegCompareMetrics,
                          config: Dict[str, Any]) -> Optional[KPIAnalysisResult]:
         """
-        Degrade 분석 실행
+        [Analysis] Degrade 분석 실행
         
         Args:
             pre_stats: Pre 기간 통계
@@ -893,7 +887,7 @@ class DegradeAnalyzer(BaseKPIAnalyzer):
             # KPI 극성 확인
             kpi_positivity = config.get("kpi_positivity", "positive")
             
-            # 분포 비교 분석 (Improve와 반대 조건)
+            # 분포 교차 분석 (Improve와 반대 조건)
             distribution_analysis = self._analyze_distribution_separation(
                 pre_stats, post_stats, kpi_positivity
             )
@@ -902,6 +896,8 @@ class DegradeAnalyzer(BaseKPIAnalyzer):
                 reasoning = self._generate_degrade_reasoning(
                     distribution_analysis, kpi_positivity
                 )
+                
+                self.logger.debug(f"📉 Degrade 감지: {reasoning}")
                 
                 return KPIAnalysisResult(
                     judgement_type=JudgementType.NOK,  # Degrade는 NOK로 분류
@@ -915,7 +911,7 @@ class DegradeAnalyzer(BaseKPIAnalyzer):
             return None  # Degrade가 아님
             
         except Exception as e:
-            self.logger.error(f"Degrade analysis error: {e}")
+            self.logger.error(f"❌ Degrade 분석 중 오류: {e}")
             raise
     
     def _analyze_distribution_separation(self, 
@@ -923,32 +919,24 @@ class DegradeAnalyzer(BaseKPIAnalyzer):
                                        post_stats: PegPeriodStats, 
                                        kpi_positivity: str) -> Dict[str, Any]:
         """
-        분포 분리 분석 (Degrade 관점)
-        
-        Args:
-            pre_stats: Pre 기간 통계
-            post_stats: Post 기간 통계
-            kpi_positivity: KPI 극성
-            
-        Returns:
-            Dict[str, Any]: 분포 분석 결과
+        [Helper] 분포 분리 분석 (Degrade 관점)
         """
         try:
             pre_min, pre_max = pre_stats.min, pre_stats.max
             post_min, post_max = post_stats.min, post_stats.max
             
             if kpi_positivity == "positive":
-                # Positive KPI: min(pre) > max(post) → Degrade
+                # Positive KPI: min(pre) > max(post) → Degrade (Post가 전체적으로 더 낮음)
                 is_degrade = pre_min > post_max
                 comparison_type = "min_pre_vs_max_post"
                 comparison_values = {"pre_min": pre_min, "post_max": post_max}
             else:
-                # Negative KPI: max(pre) < min(post) → Degrade
+                # Negative KPI: max(pre) < min(post) → Degrade (Post가 전체적으로 더 높음)
                 is_degrade = pre_max < post_min
                 comparison_type = "max_pre_vs_min_post"
                 comparison_values = {"pre_max": pre_max, "post_min": post_min}
             
-            # 분포 겹침 정도 계산 (ImproveAnalyzer와 동일한 로직 재사용)
+            # 분포 겹침 정도 계산 (ImproveAnalyzer 로직 재사용)
             improve_analyzer = ImproveAnalyzer()
             overlap_analysis = improve_analyzer._calculate_distribution_overlap(pre_stats, post_stats)
             
@@ -962,11 +950,11 @@ class DegradeAnalyzer(BaseKPIAnalyzer):
             }
             
         except Exception as e:
-            self.logger.error(f"Distribution separation analysis error: {e}")
+            self.logger.error(f"❌ 분포 분리 분석 오류 (Degrade): {e}")
             return {"is_degrade": False, "error": str(e)}
     
     def _generate_degrade_reasoning(self, distribution_analysis: Dict[str, Any], kpi_positivity: str) -> str:
-        """Degrade 판정 근거 생성"""
+        """[Helper] Degrade 판정 근거 생성"""
         comparison_values = distribution_analysis["comparison_values"]
         overlap_info = distribution_analysis["distribution_overlap"]
         
@@ -982,13 +970,11 @@ class DegradeAnalyzer(BaseKPIAnalyzer):
                    f"분포 분리됨 (겹침 비율: {overlap_info['overlap_ratio']:.1%})")
     
     def _validate_specific_config(self, config: Dict[str, Any]) -> bool:
-        """Degrade 분석기 특화 설정 검증"""
-        # KPI 극성 정보가 있으면 검증
+        """[Validation] Degrade 분석기 특화 설정 검증"""
         kpi_positivity = config.get("kpi_positivity")
         if kpi_positivity and kpi_positivity not in ["positive", "negative"]:
             self.logger.error(f"Invalid kpi_positivity: {kpi_positivity}")
             return False
-        
         return True
 
 

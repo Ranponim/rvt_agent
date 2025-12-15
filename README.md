@@ -83,7 +83,20 @@ source venv/bin/activate  # Windows: venv\Scripts\activate
 pip install -r requirements.txt
 ```
 
-### 4.3 Running the API
+
+### 4.3 Configuration (Environment Setup)
+Before running the application, you must configure the environment variables.
+1. Copy the example configuration file:
+   ```bash
+   cp .env.example .env
+   # Windows
+   copy .env.example .env
+   ```
+2. Edit `.env` file to match your environment (e.g., API URLs, Model Names).
+   - `AGENT_API_URL`: URL for the LLM API.
+   - `PMDATA_API_BASE_URL`: URL for the PM Data source.
+
+### 4.4 Running the API
 FastAPI 서버를 실행하여 분석 요청을 처리합니다.
 ```bash
 uvicorn app.main:app --reload
@@ -98,7 +111,16 @@ pytest
 
 # Run specific service tests
 pytest tests/test_choi_service.py
-pytest tests/test_rag_service_logic.py
+
+### 4.6 Standalone / Docker Execution
+For standalone execution (e.g., in a separate Docker container), ensure that:
+1. All dependencies from `requirements.txt` are installed.
+2. The `.env` file is properly configured with accessible external URLs (since `localhost` inside Docker refers to the container itself).
+3. The server is exposed on host 0.0.0.0.
+
+Example Command:
+```bash
+uvicorn app.main:app --host 0.0.0.0 --port 8000
 ```
 
 ### 4.5 Python Client Example (L1 Analysis)
